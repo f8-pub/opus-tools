@@ -7,3 +7,16 @@ This is opus-tools, a set of tools to encode, inspect, and decode
 audio in the Opus format.
 
 For more information on Opus see https://www.opus-codec.org/
+
+
+## 编译
+
+```bash
+# 环境准备
+sudo apt install libogg-dev libopus-dev libflac-dev
+./autogen.sh
+./configure
+
+# 编译
+make opusenc
+```
