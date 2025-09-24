@@ -42,6 +42,7 @@
 # define _FILE_OFFSET_BITS 64
 #endif
 
+#include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -860,15 +861,22 @@ long raw_opus_read(void *in, float *buffer, int samples)
 {
     unsigned int block_size, timestamp;
 
+    assert(sizeof(block_size)==4);
+
     wavfile *f = (wavfile *)in;
+
+    /*
     int realsamples = f->totalsamples > 0 && samples > (f->totalsamples - f->samplesread)
         ? f->totalsamples - f->samplesread : samples;
 
     if (realsamples==0){
         return realsamples;
     }
+    */
 
     int readsize = fread(&block_size, 4, 1, f->f);
+
+    assert(readsize>=0);
 
     if (readsize==0) {
         return 0;
@@ -878,9 +886,13 @@ long raw_opus_read(void *in, float *buffer, int samples)
 
     readsize = fread(&timestamp, 4, 1, f->f); // read timestamp
 
+    assert(readsize>=0);
+
     int i,j;
 
-    realsamples = fread(buf, 1, block_size - 4, f->f);
+    int realsamples = fread(buf, 1, block_size - 4, f->f);
+    assert(realsamples>=0);
+
     f->samplesread += realsamples;
 
     //printf("read: %d, block_size: %d\n", realsamples, block_size);

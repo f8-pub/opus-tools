@@ -31,6 +31,7 @@
 # include "config.h"
 #endif
 
+#include <assert.h>
 #include <stdio.h>
 #include <getopt.h>
 
@@ -97,8 +98,8 @@ static inline int oe_write_page(ogg_page *page, FILE *fp)
 
 void opustoolsversion(const char *opusversion)
 {
-  printf("opusenc %s %s (using %s)\n",PACKAGE_NAME,PACKAGE_VERSION,opusversion);
-  printf("Copyright (C) 2008-2017 Xiph.Org Foundation\n");
+  printf("opuswrap %s %s (using %s)\n",PACKAGE_NAME,PACKAGE_VERSION,opusversion);
+  printf("Copyright (C) 2025 yanshu.beauty\n");
 }
 
 void opustoolsversion_short(const char *opusversion)
@@ -108,7 +109,7 @@ void opustoolsversion_short(const char *opusversion)
 
 void usage(void)
 {
-  printf("Usage: opusenc [options] input_file output_file.opus\n");
+  printf("Usage: opuswrap [options] input_file output_file.opus\n");
   printf("\n");
   printf("Encode audio using Opus.\n");
 #if defined(HAVE_LIBFLAC)
@@ -291,7 +292,7 @@ int main(int argc, char **argv)
   OpusMSEncoder      *st;
   const char         *opus_version;
   unsigned char      *packet;
-  float              *input;
+  unsigned char      *input;
   /*I/O*/
   oe_enc_opt         inopt;
   const input_format *in_format;
@@ -340,7 +341,7 @@ int main(int argc, char **argv)
   int                downmix=0;
   int                *opt_ctls_ctlval;
   int                opt_ctls=0;
-  int                max_ogg_delay=48000; /*48kHz samples*/
+  int                max_ogg_delay=16000; /*48kHz samples*/
   int                seen_file_icons=0;
   int                comment_padding=512;
   int                serialno;
@@ -636,6 +637,7 @@ int main(int argc, char **argv)
     }
   }
 
+  inopt.rawmode = 1; // 只能使用 raw 模式
   if(inopt.rawmode){
     in_format = &raw_format;
     in_format->open_func(fin, &inopt, NULL, 0);
@@ -678,11 +680,12 @@ int main(int argc, char **argv)
   else if(rate>12000)coding_rate=16000;
   else if(rate>8000)coding_rate=12000;
   else coding_rate=8000;
-
+  
   frame_size=frame_size/(48000/coding_rate);
   */
 
-  printf("rate: %d\ncoding_rate: %d\nframe_size: %d\n", rate, coding_rate, frame_size);
+  printf("rate: %d coding_rate: %d frame_size: %d max_ogg_delay: %d\n", 
+    rate, coding_rate, frame_size, max_ogg_delay);
 
   /*Scale the resampler complexity, but only for 48000 output because
     the near-cutoff behavior matters a lot more at lower rates.*/
@@ -901,7 +904,7 @@ int main(int argc, char **argv)
 
   free(inopt.comments);
 
-  input=malloc(sizeof(float)*frame_size*chan);
+  input=malloc(sizeof(unsigned char)*frame_size*chan);
   if(input==NULL){
     fprintf(stderr,"Error: couldn't allocate sample buffer.\n");
     exit(1);
@@ -915,8 +918,10 @@ int main(int argc, char **argv)
     int size_segments,cur_frame_size;
     id++;
 
-    nb_samples = inopt.read_samples(inopt.readdata,packet,frame_size);
-    total_samples+=nb_samples;
+    if(nb_samples<0){
+      nb_samples = inopt.read_samples(inopt.readdata,input,frame_size);
+      total_samples+=nb_samples;
+    }
 
     //printf("nb_samples: %d\n", nb_samples);
 
@@ -937,9 +942,7 @@ int main(int argc, char **argv)
     }
     */
 
-    if(nb_samples==0){
-      op.e_o_s=1;
-    }
+    //if(nb_samples==0) op.e_o_s=1;
 
     packet_cnt++;
 
@@ -955,6 +958,9 @@ int main(int argc, char **argv)
     */
 
     nbBytes = nb_samples; // 按原样写
+    for(i=0;i<nb_samples;i++) packet[i]=input[i];
+
+    assert(nbBytes>=0);
 
     //VG_CHECK(packet,nbBytes);
     //VG_UNDEF(input,sizeof(float)*chan*cur_frame_size);
@@ -994,6 +1000,7 @@ int main(int argc, char **argv)
          fprintf(stderr,"Error: failed writing data to output stream\n");
          exit(1);
       }
+      //printf("pages_out: %d last_granulepos: %d\n", pages_out, last_granulepos);
       bytes_written+=ret;
       pages_out++;
     }
@@ -1003,13 +1010,11 @@ int main(int argc, char **argv)
       to get cropped off. The downside of late reading is added delay.
       If your ogg_delay is 120ms or less we'll assume you want the
       low delay behavior.*/
-    /*
     if((!op.e_o_s)&&max_ogg_delay>5760){
       nb_samples = inopt.read_samples(inopt.readdata,input,frame_size);
       total_samples+=nb_samples;
       if(nb_samples==0)op.e_o_s=1;
     } else nb_samples=-1;
-    */
 
     op.packet=(unsigned char *)packet;
     op.bytes=nbBytes;
@@ -1020,7 +1025,7 @@ int main(int argc, char **argv)
         resampling decoder does the matching floor((len-preskip)*input_rate/48k)
         conversion, the resulting output length will exactly equal the original
         input length when 0<input_rate<=48000.*/
-      op.granulepos=((original_samples*48000+rate-1)/rate)+header.preskip;
+      //op.granulepos=((original_samples*48000+rate-1)/rate)+header.preskip;
     }
     op.packetno=2+id;
     ogg_stream_packetin(&os, &op);
@@ -1047,6 +1052,7 @@ int main(int argc, char **argv)
          fprintf(stderr,"Error: failed writing data to output stream\n");
          exit(1);
       }
+      //printf("pages_out: %d last_granulepos: %d\n", pages_out, last_granulepos);
       bytes_written+=ret;
       pages_out++;
     }
