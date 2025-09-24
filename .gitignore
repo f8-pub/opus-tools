@@ -27,6 +27,7 @@ opusenc
 opusdec
 opusinfo
 opusrtp
+opuswrap
 
 # Always include these!
 !win32/config.h

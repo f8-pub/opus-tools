@@ -18,5 +18,5 @@ sudo apt install libogg-dev libopus-dev libflac-dev
 ./configure
 
 # 编译
-make opusenc
+make opuswrap
 ```
