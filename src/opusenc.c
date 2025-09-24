@@ -680,6 +680,8 @@ int main(int argc, char **argv)
 
   frame_size=frame_size/(48000/coding_rate);
 
+  printf("rate: %d\ncoding_rate: %d\nframe_size: %d\n", rate, coding_rate, frame_size);
+
   /*Scale the resampler complexity, but only for 48000 output because
     the near-cutoff behavior matters a lot more at lower rates.*/
   if(rate!=coding_rate)setup_resample(&inopt,coding_rate==48000?(complexity+1)/2:5,coding_rate);
@@ -724,6 +726,8 @@ int main(int argc, char **argv)
     exit(1);
   }
   bitrate=IMIN(chan*256000,bitrate);
+
+  printf("bitrate: %d\n", bitrate);
 
   ret=opus_multistream_encoder_ctl(st, OPUS_SET_BITRATE(bitrate));
   if(ret!=OPUS_OK){

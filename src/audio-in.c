@@ -856,6 +856,68 @@ int raw_open(FILE *in, oe_enc_opt *opt, unsigned char *buf, int buflen)
     return 1;
 }
 
+long raw_opus_read(void *in, float *buffer, int samples)
+{
+    unsigned int block_size, timestamp;
+
+    wavfile *f = (wavfile *)in;
+    int realsamples = f->totalsamples > 0 && samples > (f->totalsamples - f->samplesread)
+        ? f->totalsamples - f->samplesread : samples;
+
+    if (realsamples==0){
+        return realsamples;
+    }
+
+    int readsize = fread(&block_size, 4, 1, f->f);
+
+    if (readsize==0) {
+        return 0;
+    }
+
+    float *buf = alloca(block_size - 4); /* de-interleave buffer */
+
+    readsize = fread(&timestamp, 4, 1, f->f); // read timestamp
+
+    int i,j;
+
+    realsamples = fread(buf, 1, block_size - 4, f->f);
+    f->samplesread += realsamples;
+
+    //printf("read: %d, block_size: %d\n", realsamples, block_size);
+
+    for(i=0; i < realsamples; i++)
+        for(j=0; j < f->channels; j++)
+            buffer[i*f->channels+j] = buf[i*f->channels + f->channel_permute[j]];
+
+    return realsamples;
+}
+
+int raw_opus_open(FILE *in, oe_enc_opt *opt, unsigned char *buf, int buflen)
+{
+    wavfile *wav = malloc(sizeof(wavfile));
+    int i;
+    (void)buf;/*unused*/
+    (void)buflen;/*unused*/
+
+    wav->f =             in;
+    wav->samplesread =   0;
+    wav->bigendian =     opt->endianness;
+    wav->unsigned8bit =  opt->samplesize == 8;
+    wav->channels =      1;
+    wav->samplesize =    opt->samplesize;
+    wav->totalsamples =  0;
+    wav->channel_permute = malloc(wav->channels * sizeof(int));
+    for (i=0; i < wav->channels; i++)
+      wav->channel_permute[i] = i;
+
+    opt->read_samples = raw_opus_read;
+    opt->readdata = (void *)wav;
+    opt->total_samples_per_channel = 0; /* raw mode, don't bother */
+    return 1;
+}
+
+
+
 typedef struct {
     audio_read_func real_reader;
     void *real_readdata;

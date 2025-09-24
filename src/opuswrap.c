@@ -243,7 +243,7 @@ static inline void print_time(double seconds)
 
 int main(int argc, char **argv)
 {
-  static const input_format raw_format = {NULL, 0, raw_open, wav_close, "raw",N_("RAW file reader")};
+  static const input_format raw_format = {NULL, 0, raw_opus_open, wav_close, "raw",N_("RAW file reader")};
   int option_index=0;
   struct option long_options[] =
   {
@@ -329,10 +329,10 @@ int main(int argc, char **argv)
   int                quiet=0;
   int                max_frame_bytes;
   opus_int32         bitrate=-1;
-  opus_int32         rate=48000;
-  opus_int32         coding_rate=48000;
+  opus_int32         rate=16000;
+  opus_int32         coding_rate=16000;
   opus_int32         frame_size=960;
-  int                chan=2;
+  int                chan=1;
   int                with_hard_cbr=0;
   int                with_cvbr=0;
   int                expect_loss=0;
@@ -372,7 +372,7 @@ int main(int argc, char **argv)
   inopt.gain=0;
   inopt.samplesize=16;
   inopt.endianness=0;
-  inopt.rawmode=0;
+  inopt.rawmode=1;
   inopt.ignorelength=0;
   inopt.copy_comments=1;
   inopt.copy_pictures=1;
@@ -670,8 +670,9 @@ int main(int argc, char **argv)
   inopt.skip=0;
 
   /*In order to code the complete length we'll need to do a little padding*/
-  setup_padder(&inopt,&original_samples);
+  //setup_padder(&inopt,&original_samples);
 
+  /*
   if(rate>24000)coding_rate=48000;
   else if(rate>16000)coding_rate=24000;
   else if(rate>12000)coding_rate=16000;
@@ -679,10 +680,13 @@ int main(int argc, char **argv)
   else coding_rate=8000;
 
   frame_size=frame_size/(48000/coding_rate);
+  */
+
+  printf("rate: %d\ncoding_rate: %d\nframe_size: %d\n", rate, coding_rate, frame_size);
 
   /*Scale the resampler complexity, but only for 48000 output because
     the near-cutoff behavior matters a lot more at lower rates.*/
-  if(rate!=coding_rate)setup_resample(&inopt,coding_rate==48000?(complexity+1)/2:5,coding_rate);
+  //if(rate!=coding_rate)setup_resample(&inopt,coding_rate==48000?(complexity+1)/2:5,coding_rate);
 
   if(rate!=coding_rate&&complexity!=10&&!quiet){
     fprintf(stderr,"Notice: Using resampling with complexity<10.\n");
@@ -724,6 +728,8 @@ int main(int argc, char **argv)
     exit(1);
   }
   bitrate=IMIN(chan*256000,bitrate);
+
+  printf("bitrate: %d\n", bitrate);
 
   ret=opus_multistream_encoder_ctl(st, OPUS_SET_BITRATE(bitrate));
   if(ret!=OPUS_OK){
@@ -901,16 +907,18 @@ int main(int argc, char **argv)
     exit(1);
   }
 
+  int packet_cnt = 0;
+
   /*Main encoding loop (one frame per iteration)*/
   nb_samples=-1;
   while(!op.e_o_s){
     int size_segments,cur_frame_size;
     id++;
 
-    if(nb_samples<0){
-      nb_samples = inopt.read_samples(inopt.readdata,input,frame_size);
-      total_samples+=nb_samples;
-    }
+    nb_samples = inopt.read_samples(inopt.readdata,packet,frame_size);
+    total_samples+=nb_samples;
+
+    //printf("nb_samples: %d\n", nb_samples);
 
     if(start_time==0){
       start_time = time(NULL);
@@ -918,16 +926,25 @@ int main(int argc, char **argv)
 
     cur_frame_size=frame_size;
 
+    /*
     if(nb_samples<cur_frame_size){
       op.e_o_s=1;
-      /*Avoid making the final packet 20ms or more longer than needed.*/
+      // Avoid making the final packet 20ms or more longer than needed.
       cur_frame_size-=((cur_frame_size-(nb_samples>0?nb_samples:1))
         /(coding_rate/50))*(coding_rate/50);
-      /*No fancy end padding, just fill with zeros for now.*/
+      // No fancy end padding, just fill with zeros for now.
       for(i=nb_samples*chan;i<cur_frame_size*chan;i++)input[i]=0;
     }
+    */
+
+    if(nb_samples==0){
+      op.e_o_s=1;
+    }
+
+    packet_cnt++;
 
     /*Encode current frame*/
+    /*
     VG_UNDEF(packet,max_frame_bytes);
     VG_CHECK(input,sizeof(float)*chan*cur_frame_size);
     nbBytes=opus_multistream_encode_float(st, input, cur_frame_size, packet, max_frame_bytes);
@@ -935,8 +952,12 @@ int main(int argc, char **argv)
       fprintf(stderr, "Encoding failed: %s. Aborting.\n", opus_strerror(nbBytes));
       break;
     }
-    VG_CHECK(packet,nbBytes);
-    VG_UNDEF(input,sizeof(float)*chan*cur_frame_size);
+    */
+
+    nbBytes = nb_samples; // 按原样写
+
+    //VG_CHECK(packet,nbBytes);
+    //VG_UNDEF(input,sizeof(float)*chan*cur_frame_size);
     nb_encoded+=cur_frame_size;
     enc_granulepos+=cur_frame_size*48000/coding_rate;
     total_bytes+=nbBytes;
@@ -944,6 +965,7 @@ int main(int argc, char **argv)
     peak_bytes=IMAX(nbBytes,peak_bytes);
     min_bytes=IMIN(nbBytes,min_bytes);
 
+    /*
     if(frange!=NULL){
       opus_uint32 rngs[256];
       OpusEncoder *oe;
@@ -954,6 +976,7 @@ int main(int argc, char **argv)
       save_range(frange,cur_frame_size*(48000/coding_rate),packet,nbBytes,
                  rngs,header.nb_streams);
     }
+    */
 
     /*Flush early if adding this packet would make us end up with a
       continued page which we wouldn't have otherwise.*/
@@ -980,11 +1003,13 @@ int main(int argc, char **argv)
       to get cropped off. The downside of late reading is added delay.
       If your ogg_delay is 120ms or less we'll assume you want the
       low delay behavior.*/
+    /*
     if((!op.e_o_s)&&max_ogg_delay>5760){
       nb_samples = inopt.read_samples(inopt.readdata,input,frame_size);
       total_samples+=nb_samples;
       if(nb_samples==0)op.e_o_s=1;
     } else nb_samples=-1;
+    */
 
     op.packet=(unsigned char *)packet;
     op.bytes=nbBytes;
@@ -1063,6 +1088,8 @@ int main(int argc, char **argv)
   }
   stop_time = time(NULL);
 
+  printf("\npacket_cnt: %d\n", packet_cnt);
+
   if(last_spin_len)fprintf(stderr,"\r");
   for(i=0;i<last_spin_len;i++)fprintf(stderr," ");
   if(last_spin_len)fprintf(stderr,"\r");
@@ -1096,8 +1123,8 @@ int main(int argc, char **argv)
   free(input);
   if(opt_ctls)free(opt_ctls_ctlval);
 
-  if(rate!=coding_rate)clear_resample(&inopt);
-  clear_padder(&inopt);
+  //if(rate!=coding_rate)clear_resample(&inopt);
+  //clear_padder(&inopt);
   if(downmix)clear_downmix(&inopt);
   in_format->close_func(inopt.readdata);
   if(fin)fclose(fin);
