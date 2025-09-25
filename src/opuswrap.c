@@ -732,7 +732,7 @@ int main(int argc, char **argv)
   }
   bitrate=IMIN(chan*256000,bitrate);
 
-  printf("bitrate: %d\n", bitrate);
+  //printf("bitrate: %d\n", bitrate);
 
   ret=opus_multistream_encoder_ctl(st, OPUS_SET_BITRATE(bitrate));
   if(ret!=OPUS_OK){
@@ -1094,7 +1094,7 @@ int main(int argc, char **argv)
   }
   stop_time = time(NULL);
 
-  printf("\npacket_cnt: %d\n", packet_cnt);
+  //printf("\npacket_cnt: %d\n", packet_cnt);
 
   if(last_spin_len)fprintf(stderr,"\r");
   for(i=0;i<last_spin_len;i++)fprintf(stderr," ");
